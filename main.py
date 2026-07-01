@@ -9,6 +9,7 @@ EMAIL = "22f3000616@ds.study.iitm.ac.in"
 
 app = FastAPI()
 
+# Startup time
 start_time = time.time()
 
 # Prometheus counter
@@ -17,12 +18,13 @@ http_requests_total = Counter(
     "Total HTTP Requests"
 )
 
-# Store last 1000 log entries
+# Store the last 1000 log entries
 logs = deque(maxlen=1000)
 
 
 @app.middleware("http")
 async def log_requests(request: Request, call_next):
+    # Increment counter for every request
     http_requests_total.inc()
 
     request_id = str(uuid.uuid4())
@@ -40,14 +42,16 @@ async def log_requests(request: Request, call_next):
 
 
 @app.get("/")
-def root():
+def home():
     return {"message": "Observable API Running"}
 
 
 @app.get("/work")
 def work(n: int):
-    for _ in range(n):
-        pass
+    # Simulate work
+    total = 0
+    for i in range(n):
+        total += i
 
     return {
         "email": EMAIL,
