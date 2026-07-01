@@ -1,59 +1,76 @@
-from fastapi import FastAPI, Header, HTTPException
-from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
-from typing import List
+from fastapi import FastAPI, Request
+from fastapi.responses import Response
+from prometheus_client import Counter, generate_latest, CONTENT_TYPE_LATEST
+from collections import deque
+import time
+import uuid
+
+EMAIL = "22f3000616@ds.study.iitm.ac.in"
 
 app = FastAPI()
 
-API_KEY = "ak_45rln8w59kkg9sgnszl8ogsj"
-EMAIL = "22f3000616@ds.study.iitm.ac.in"
+start_time = time.time()
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_methods=["*"],
-    allow_headers=["*"]
+# Prometheus counter
+http_requests_total = Counter(
+    "http_requests_total",
+    "Total HTTP Requests"
 )
 
-
-class Event(BaseModel):
-    user: str
-    amount: float
-    ts: int
+# Store last 1000 log entries
+logs = deque(maxlen=1000)
 
 
-class AnalyticsRequest(BaseModel):
-    events: List[Event]
+@app.middleware("http")
+async def log_requests(request: Request, call_next):
+    http_requests_total.inc()
+
+    request_id = str(uuid.uuid4())
+
+    logs.append({
+        "level": "INFO",
+        "ts": time.time(),
+        "path": request.url.path,
+        "request_id": request_id
+    })
+
+    response = await call_next(request)
+    response.headers["X-Request-ID"] = request_id
+    return response
 
 
-@app.post("/analytics")
-def analytics(
-    data: AnalyticsRequest,
-    x_api_key: str = Header(None)
-):
+@app.get("/")
+def root():
+    return {"message": "Observable API Running"}
 
-    if x_api_key != API_KEY:
-        raise HTTPException(status_code=401)
 
-    total_events = len(data.events)
-
-    users = set()
-    revenue = 0
-    totals = {}
-
-    for e in data.events:
-        users.add(e.user)
-
-        if e.amount > 0:
-            revenue += e.amount
-            totals[e.user] = totals.get(e.user, 0) + e.amount
-
-    top_user = max(totals, key=totals.get)
+@app.get("/work")
+def work(n: int):
+    for _ in range(n):
+        pass
 
     return {
         "email": EMAIL,
-        "total_events": total_events,
-        "unique_users": len(users),
-        "revenue": revenue,
-        "top_user": top_user
+        "done": n
     }
+
+
+@app.get("/metrics")
+def metrics():
+    return Response(
+        generate_latest(),
+        media_type=CONTENT_TYPE_LATEST
+    )
+
+
+@app.get("/healthz")
+def healthz():
+    return {
+        "status": "ok",
+        "uptime_s": time.time() - start_time
+    }
+
+
+@app.get("/logs/tail")
+def logs_tail(limit: int = 10):
+    return list(logs)[-limit:]
